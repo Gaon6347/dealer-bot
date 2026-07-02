@@ -2,8 +2,9 @@ import discord
 from discord.ext import commands
 import asyncio
 import time
+import os
 
-TOKEN = "토큰"
+TOKEN = os.environ.get("TOKEN")
 DEALER_ROLE_NAME = "딜러"
 LOG_CHANNEL_ID = 1521553559211085907  # 딜러 호출 + 로그 채널
 ADMIN_ID = 1389846967626109094      # 관리자 ID
