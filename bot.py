@@ -6,12 +6,11 @@ import os
 
 TOKEN = os.environ.get("TOKEN")
 DEALER_ROLE_NAME = "딜러"
-LOG_CHANNEL_ID = 1521553559211085907  # 딜러 호출 + 로그 채널
-ADMIN_ID = 1389846967626109094      # 관리자 ID
-CATEGORY_ID = 1521550375939997890     # 카테고리 ID
+LOG_CHANNEL_ID = 1521553559211085907
+ADMIN_ID = 1389846967626109094
+CATEGORY_ID = 1521550375939997890
 
-# 🔥 유저별 쿨타임 저장
-active_calls = {}  # user_id: timestamp
+active_calls = {}
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -28,14 +27,12 @@ class CloseView(discord.ui.View):
 
     @discord.ui.button(label="대화종료", style=discord.ButtonStyle.danger)
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
             await interaction.response.send_message("❌ 딜러만 종료할 수 있습니다.", ephemeral=True)
             return
 
         await interaction.response.send_message("🗑️ 방 삭제 중...", ephemeral=True)
         await interaction.channel.delete()
-
 
 # ==============================
 # 딜러 응답
@@ -63,7 +60,6 @@ class AcceptView(discord.ui.View):
         guild = interaction.guild
         dealer = interaction.user
         admin = guild.get_member(ADMIN_ID)
-
         category = guild.get_channel(CATEGORY_ID)
 
         overwrites = {
@@ -82,14 +78,14 @@ class AcceptView(discord.ui.View):
         )
 
         await channel.send(
-    (
-        f"{self.customer.mention} 님, {dealer.mention} 딜러님과 매칭이 완료되었습니다.\n"
-        f"어떤 도박을 진행하실건지 말씀 후 섬상점 이동으로 카지노로 이동해주세요.\n\n"
-        f"💰 미니게임 이용 안내\n"
-        f"미니게임은 1회 진행 시 최소 50만원부터 최대 200만원까지 이용 가능합니다."
-    ),
-    view=CloseView()
-)
+            (
+                f"{self.customer.mention} 님, {dealer.mention} 딜러님과 매칭이 완료되었습니다.\n"
+                f"어떤 도박을 진행하실건지 말씀 후 섬상점 이동으로 카지노로 이동해주세요.\n\n"
+                f"💰 미니게임 이용 안내\n"
+                f"미니게임은 1회 진행 시 최소 50만원부터 최대 200만원까지 이용 가능합니다."
+            ),
+            view=CloseView()
+        )
 
         log_channel = bot.get_channel(LOG_CHANNEL_ID)
         await log_channel.send(
@@ -101,12 +97,10 @@ class AcceptView(discord.ui.View):
         except:
             pass
 
-        # 🔥 쿨타임 해제
         if self.customer.id in active_calls:
             del active_calls[self.customer.id]
 
         await interaction.response.send_message("✅ 방 생성 완료", ephemeral=True)
-
 
 # ==============================
 # 딜러 호출
@@ -122,10 +116,8 @@ class CallView(discord.ui.View):
 
         guild = interaction.guild
         customer = interaction.user
-
         now = time.time()
 
-        # 🔥 유저별 쿨타임 체크
         if customer.id in active_calls:
             if now < active_calls[customer.id]:
                 await interaction.followup.send(
@@ -151,7 +143,6 @@ class CallView(discord.ui.View):
 
         view.message = msg
 
-        # 🔥 5분 쿨타임 등록
         active_calls[customer.id] = now + 300
 
         await interaction.followup.send(
@@ -164,7 +155,6 @@ class CallView(discord.ui.View):
         asyncio.create_task(self.timeout_call(view, msg, customer))
 
     async def timeout_call(self, view, msg, customer):
-
         await asyncio.sleep(300)
 
         if not view.clicked:
@@ -181,11 +171,17 @@ class CallView(discord.ui.View):
             except:
                 pass
 
-        # 🔥 쿨타임 해제
         if customer.id in active_calls:
             if time.time() >= active_calls[customer.id]:
                 del active_calls[customer.id]
 
+# ==============================
+# 🔥 핵심 (버튼 안 죽게 하는 부분)
+# ==============================
+@bot.event
+async def on_ready():
+    bot.add_view(CallView())
+    print(f"Logged in as {bot.user}")
 
 # ==============================
 # 명령어
