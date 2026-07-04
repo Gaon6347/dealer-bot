@@ -35,7 +35,7 @@ class CloseView(discord.ui.View):
         await interaction.channel.delete()
 
 # ==============================
-# 딜러 응답
+# 담당자 응답
 # ==============================
 class AcceptView(discord.ui.View):
     def __init__(self, customer, message=None):
@@ -103,13 +103,13 @@ class AcceptView(discord.ui.View):
         await interaction.response.send_message("✅ 방 생성 완료", ephemeral=True)
 
 # ==============================
-# 딜러 호출
+# 담당자 호출
 # ==============================
 class CallView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📞 딜러 호출", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="📞 담당자 호출", style=discord.ButtonStyle.primary)
     async def call(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.defer(ephemeral=True)
