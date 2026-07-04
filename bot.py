@@ -5,7 +5,7 @@ import time
 import os
 
 TOKEN = os.environ.get("TOKEN")
-DEALER_ROLE_NAME = "딜러"
+DEALER_ROLE_NAME = "담당자"
 LOG_CHANNEL_ID = 1521553559211085907
 ADMIN_ID = 1389846967626109094
 CATEGORY_ID = 1521550375939997890
@@ -28,7 +28,7 @@ class CloseView(discord.ui.View):
     @discord.ui.button(label="대화종료", style=discord.ButtonStyle.danger)
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
-            await interaction.response.send_message("❌ 딜러만 종료할 수 있습니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 담당자만 종료할 수 있습니다.", ephemeral=True)
             return
 
         await interaction.response.send_message("🗑️ 방 삭제 중...", ephemeral=True)
@@ -48,11 +48,11 @@ class AcceptView(discord.ui.View):
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         if self.clicked:
-            await interaction.response.send_message("❌ 이미 다른 딜러가 응답했습니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 이미 다른 담당자가 응답했습니다.", ephemeral=True)
             return
 
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
-            await interaction.response.send_message("❌ 딜러만 가능합니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 담당자만 가능합니다.", ephemeral=True)
             return
 
         self.clicked = True
@@ -79,8 +79,8 @@ class AcceptView(discord.ui.View):
 
         await channel.send(
             (
-                f"{self.customer.mention} 님, {dealer.mention} 딜러님과 매칭이 완료되었습니다.\n"
-                f"어떤 도박을 진행하실건지 말씀 후 섬상점 이동으로 카지노로 이동해주세요.\n\n"
+                f"{self.customer.mention} 님, {dealer.mention} 담당자님과 매칭이 완료되었습니다.\n"
+                f"어떤 미니게임을 진행하실건지 말씀 후 섬상점 이동을 이용해주세요.\n\n"
                 f"💰 미니게임 이용 안내\n"
                 f"미니게임은 1회 진행 시 최소 50만원부터 최대 200만원까지 이용 가능합니다."
             ),
@@ -89,7 +89,7 @@ class AcceptView(discord.ui.View):
 
         log_channel = bot.get_channel(LOG_CHANNEL_ID)
         await log_channel.send(
-            f"🎲 도박 진행\n손님: {self.customer.mention}\n딜러: {dealer.mention}"
+            f"🎲 미니게임 진행\n손님: {self.customer.mention}\n담당자: {dealer.mention}"
         )
 
         try:
@@ -121,7 +121,7 @@ class CallView(discord.ui.View):
         if customer.id in active_calls:
             if now < active_calls[customer.id]:
                 await interaction.followup.send(
-                    "❌ 이미 딜러를 호출하셨습니다.\n응답 또는 자동 취소까지 기다려주세요.",
+                    "❌ 이미 담당자를 호출하셨습니다.\n응답 또는 자동 취소까지 기다려주세요.",
                     ephemeral=True
                 )
                 return
@@ -129,7 +129,7 @@ class CallView(discord.ui.View):
         dealer_role = discord.utils.get(guild.roles, name=DEALER_ROLE_NAME)
 
         if not dealer_role:
-            await interaction.followup.send("❌ 딜러 역할이 없습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 담당자 역할이 없습니다.", ephemeral=True)
             return
 
         dealer_channel = bot.get_channel(LOG_CHANNEL_ID)
@@ -137,7 +137,7 @@ class CallView(discord.ui.View):
         view = AcceptView(customer)
 
         msg = await dealer_channel.send(
-            f"{dealer_role.mention}\n📞 딜러 호출\n손님: {customer.mention}",
+            f"{dealer_role.mention}\n📞 담당자 호출\n손님: {customer.mention}",
             view=view
         )
 
@@ -146,9 +146,9 @@ class CallView(discord.ui.View):
         active_calls[customer.id] = now + 300
 
         await interaction.followup.send(
-            "📡 현재 온라인 중인 딜러를 찾는 중입니다.\n"
+            "📡 현재 온라인 중인 담당자를 찾는 중입니다.\n"
             "약 30초 ~ 5분까지 소요될 수 있으며,\n"
-            "모든 딜러가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
+            "모든 담당자가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
             ephemeral=True
         )
 
@@ -165,7 +165,7 @@ class CallView(discord.ui.View):
 
             try:
                 await customer.send(
-                    "현재 응답이 가능한 딜러가 없습니다.\n"
+                    "현재 응답이 가능한 담당자가 없습니다.\n"
                     "나중에 다시 호출 부탁드립니다, 이용에 불편을 드려 죄송합니다."
                 )
             except:
@@ -189,10 +189,10 @@ async def on_ready():
 @bot.command()
 async def 관리자전용피에(ctx):
     await ctx.send(
-        "📞 딜러 호출 버튼\n\n"
-        "딜러를 호출하려면 버튼을 눌러주세요.\n\n"
+        "📞 담당자 호출 버튼\n\n"
+        "담당자를 호출하려면 버튼을 눌러주세요.\n\n"
         "약 30초 ~ 5분까지 소요될 수 있으며,\n"
-        "모든 딜러가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
+        "모든 담당자가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
         view=CallView()
     )
 
