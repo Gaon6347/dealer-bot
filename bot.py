@@ -35,7 +35,7 @@ LOG_FILE = os.path.join(DATA_DIR, "amount_log.txt")
 
 def load_amounts():
     if os.path.exists(DATA_FILE):
-        open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
