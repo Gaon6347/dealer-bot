@@ -22,7 +22,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==============================
-# 💾 데이터 저장 및 로드 함수 (신규)
+# 💾 데이터 저장 및 로드 함수
 # ==============================
 DATA_FILE = "user_amounts.json"
 LOG_FILE = "amount_log.txt"
@@ -126,13 +126,14 @@ class AcceptView(discord.ui.View):
         await interaction.response.send_message("✅ 방 생성 완료", ephemeral=True)
 
 # ==============================
-# 담당자 호출
+# 담당자 호출 (에러 수정 완료 🛠️)
 # ==============================
 class CallView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📞 담당자 호출", style=discord.ButtonStyle.primary)
+    # 💡 custom_id를 추가하여 봇이 꺼졌다 켜져도 버튼이 작동하도록 수정했습니다.
+    @discord.ui.button(label="📞 담당자 호출", style=discord.ButtonStyle.primary, custom_id="call_dealer_btn")
     async def call(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
@@ -189,7 +190,7 @@ class CallView(discord.ui.View):
 
 
 # ==============================
-# 🆕 슬래시 명령어 그룹 (이용금액)
+# 슬래시 명령어 그룹 (이용금액)
 # ==============================
 class AmountSystem(app_commands.Group):
     def __init__(self):
@@ -204,13 +205,12 @@ class AmountSystem(app_commands.Group):
         await interaction.response.send_message(
             f"✨ **{interaction.user.display_name}** 님의 누적 이용금액은\n"
             f"💰 **{current_amount:,}원** 입니다!",
-            ephemeral=False # 모두가 볼 수 있게 하려면 False, 본인만 보게 하려면 True로 변경
+            ephemeral=False
         )
 
     @app_commands.command(name="추가", description="손님의 이용금액을 추가합니다. (담당자 전용)")
     @app_commands.describe(member="금액을 추가할 유저", amount="추가할 금액 (숫자만 입력)")
     async def add_amount(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        # 담당자 권한 체크
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles] and interaction.user.id != ADMIN_ID:
             await interaction.response.send_message("❌ 담당자만 사용할 수 있는 명령어입니다.", ephemeral=True)
             return
@@ -222,15 +222,11 @@ class AmountSystem(app_commands.Group):
         amounts = load_amounts()
         user_id_str = str(member.id)
         
-        # 금액 합산
         current_amount = amounts.get(user_id_str, 0)
         new_amount = current_amount + amount
         amounts[user_id_str] = new_amount
         
-        # 파일 저장
         save_amounts(amounts)
-        
-        # 로그 파일 기록
         write_log(interaction.user.name, member.name, amount, new_amount)
 
         await interaction.response.send_message(
@@ -247,11 +243,10 @@ class AmountSystem(app_commands.Group):
 @bot.event
 async def on_ready():
     bot.add_view(CallView())
-    # 슬래시 명령어 트리에 그룹 추가 및 동기화
     bot.tree.add_command(AmountSystem())
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
-    print("✅ 슬래시 명령어 동기화 완료")
+    print("✅ 슬래시 명령어 동기화 및 뷰 등록 완료")
 
 # ==============================
 # 명령어
