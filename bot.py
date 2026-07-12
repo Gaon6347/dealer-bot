@@ -4,16 +4,16 @@ import asyncio
 import time
 import os
 import json
-from datetime import datetime
 
 TOKEN = os.environ.get("TOKEN")
+
 DEALER_ROLE_NAME = "담당자"
 LOG_CHANNEL_ID = 1521553559211085907
 ADMIN_ID = 1389846967626109094
 CATEGORY_ID = 1521550375939997890
+GUILD_ID = 123456789012345678  # 🔥 서버 ID 넣어라
 
-DATA_FILE = "data.json"
-LOG_FILE = "log.txt"
+DATA_FILE = "money.json"
 
 active_calls = {}
 
@@ -24,77 +24,64 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==============================
-# 데이터 저장
+# 💾 데이터 저장/불러오기
 # ==============================
 def load_data():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
+    if not os.path.exists(DATA_FILE):
         return {}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
-data = load_data()
-
-def write_log(text):
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
-
 # ==============================
-# 💰 금액 모달
+# 💰 금액 입력 모달
 # ==============================
 class MoneyModal(discord.ui.Modal, title="금액 추가"):
-    target_user = discord.ui.TextInput(label="닉네임 또는 ID 입력")
-    amount = discord.ui.TextInput(label="금액 입력")
+    nickname = discord.ui.TextInput(label="유저 닉네임")
+    amount = discord.ui.TextInput(label="금액")
 
     async def on_submit(self, interaction: discord.Interaction):
-        global data
+        data = load_data()
 
-        # 관리자 제한 (담당자만 가능)
-        if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
-            await interaction.response.send_message("❌ 담당자만 사용 가능", ephemeral=True)
-            return
+        name = self.nickname.value
+        amount = int(self.amount.value)
 
-        try:
-            amount = int(self.amount.value)
-        except:
-            await interaction.response.send_message("❌ 숫자만 입력", ephemeral=True)
-            return
-
-        target = None
-
-        # ID 검색
-        if self.target_user.value.isdigit():
-            target = interaction.guild.get_member(int(self.target_user.value))
-
-        # 닉네임 검색
-        if target is None:
-            for m in interaction.guild.members:
-                if m.display_name == self.target_user.value or m.name == self.target_user.value:
-                    target = m
-                    break
-
-        if target is None:
-            await interaction.response.send_message("❌ 유저 못찾음", ephemeral=True)
-            return
-
-        uid = str(target.id)
-
-        if uid not in data:
-            data[uid] = 0
-
-        data[uid] += amount
+        data[name] = data.get(name, 0) + amount
         save_data(data)
 
-        write_log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {interaction.user} -> {target} : +{amount}")
-
         await interaction.response.send_message(
-            f"✅ {target.display_name} +{amount}원\n누적: {data[uid]}원",
+            f"✅ {name} → {amount}원 추가됨",
             ephemeral=True
         )
+
+# ==============================
+# 💰 금액 추가 명령어
+# ==============================
+@bot.tree.command(name="금액추가", guild=discord.Object(id=GUILD_ID))
+async def add_money(interaction: discord.Interaction):
+    if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
+        await interaction.response.send_message("❌ 담당자만 사용 가능", ephemeral=True)
+        return
+
+    await interaction.response.send_modal(MoneyModal())
+
+# ==============================
+# 💰 내 금액 확인
+# ==============================
+@bot.tree.command(name="이용금액", guild=discord.Object(id=GUILD_ID))
+async def check_money(interaction: discord.Interaction):
+    data = load_data()
+    name = interaction.user.name
+
+    total = data.get(name, 0)
+
+    await interaction.response.send_message(
+        f"💰 {name}님의 총 이용금액: {total}원",
+        ephemeral=True
+    )
 
 # ==============================
 # 대화 종료 버튼
@@ -103,34 +90,32 @@ class CloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="대화종료", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="대화종료", style=discord.ButtonStyle.danger, custom_id="close_btn")
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
-            await interaction.response.send_message("❌ 담당자만 종료할 수 있습니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 담당자만 종료 가능", ephemeral=True)
             return
 
-        await interaction.response.send_message("🗑️ 방 삭제 중...", ephemeral=True)
         await interaction.channel.delete()
 
 # ==============================
 # 담당자 응답
 # ==============================
 class AcceptView(discord.ui.View):
-    def __init__(self, customer, message=None):
+    def __init__(self, customer):
         super().__init__(timeout=None)
         self.customer = customer
-        self.message = message
         self.clicked = False
 
-    @discord.ui.button(label="응답하기", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="응답하기", style=discord.ButtonStyle.success, custom_id="accept_btn")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         if self.clicked:
-            await interaction.response.send_message("❌ 이미 다른 담당자가 응답했습니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 이미 응답됨", ephemeral=True)
             return
 
         if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles]:
-            await interaction.response.send_message("❌ 담당자만 가능합니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 담당자만 가능", ephemeral=True)
             return
 
         self.clicked = True
@@ -142,155 +127,71 @@ class AcceptView(discord.ui.View):
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            self.customer: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            dealer: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+            self.customer: discord.PermissionOverwrite(view_channel=True),
+            dealer: discord.PermissionOverwrite(view_channel=True),
         }
 
         if admin:
-            overwrites[admin] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            overwrites[admin] = discord.PermissionOverwrite(view_channel=True)
 
         channel = await guild.create_text_channel(
-            name=f"🎰│{self.customer.name}-방",
+            name=f"{self.customer.name}-방",
             overwrites=overwrites,
             category=category
         )
 
         await channel.send(
-            (
-                f"{self.customer.mention} 님, {dealer.mention} 담당자님과 매칭이 완료되었습니다.\n"
-                f"어떤 미니게임을 진행하실건지 말씀 후 섬상점 이동을 이용해주세요.\n\n"
-                f"💰 미니게임 이용 안내\n"
-                f"미니게임은 1회 진행 시 최소 50만원부터 최대 200만원까지 이용 가능합니다."
-            ),
+            f"{self.customer.mention} ↔ {dealer.mention} 매칭 완료",
             view=CloseView()
         )
 
-        log_channel = bot.get_channel(LOG_CHANNEL_ID)
-        await log_channel.send(
-            f"🎲 미니게임 진행\n손님: {self.customer.mention}\n담당자: {dealer.mention}"
-        )
-
-        try:
-            await interaction.message.delete()
-        except:
-            pass
-
-        if self.customer.id in active_calls:
-            del active_calls[self.customer.id]
-
-        await interaction.response.send_message("✅ 방 생성 완료", ephemeral=True)
+        await interaction.response.send_message("✅ 생성 완료", ephemeral=True)
 
 # ==============================
-# 담당자 호출
+# 담당자 호출 버튼
 # ==============================
 class CallView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📞 담당자 호출", style=discord.ButtonStyle.primary)
+    @discord.ui.button(
+        label="📞 담당자 호출",
+        style=discord.ButtonStyle.green,
+        custom_id="call_btn"
+    )
     async def call(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.defer(ephemeral=True)
 
         guild = interaction.guild
         customer = interaction.user
-        now = time.time()
-
-        if customer.id in active_calls:
-            if now < active_calls[customer.id]:
-                await interaction.followup.send(
-                    "❌ 이미 담당자를 호출하셨습니다.\n응답 또는 자동 취소까지 기다려주세요.",
-                    ephemeral=True
-                )
-                return
 
         dealer_role = discord.utils.get(guild.roles, name=DEALER_ROLE_NAME)
-
-        if not dealer_role:
-            await interaction.followup.send("❌ 담당자 역할이 없습니다.", ephemeral=True)
-            return
-
         dealer_channel = bot.get_channel(LOG_CHANNEL_ID)
 
         view = AcceptView(customer)
 
-        msg = await dealer_channel.send(
-            f"{dealer_role.mention}\n📞 담당자 호출\n손님: {customer.mention}",
+        await dealer_channel.send(
+            f"{dealer_role.mention} 호출\n손님: {customer.mention}",
             view=view
         )
 
-        view.message = msg
-
-        active_calls[customer.id] = now + 300
-
-        await interaction.followup.send(
-            "📡 현재 온라인 중인 담당자를 찾는 중입니다.\n"
-            "약 30초 ~ 5분까지 소요될 수 있으며,\n"
-            "모든 담당자가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
-            ephemeral=True
-        )
-
-        asyncio.create_task(self.timeout_call(view, msg, customer))
-
-    async def timeout_call(self, view, msg, customer):
-        await asyncio.sleep(300)
-
-        if not view.clicked:
-            try:
-                await msg.delete()
-            except:
-                pass
-
-            try:
-                await customer.send(
-                    "현재 응답이 가능한 담당자가 없습니다.\n"
-                    "나중에 다시 호출 부탁드립니다, 이용에 불편을 드려 죄송합니다."
-                )
-            except:
-                pass
-
-        if customer.id in active_calls:
-            if time.time() >= active_calls[customer.id]:
-                del active_calls[customer.id]
-
-# ==============================
-# 슬래시 명령어
-# ==============================
-@bot.tree.command(name="금액추가")
-async def add_money(interaction: discord.Interaction):
-    await interaction.response.send_modal(MoneyModal())
-
-@bot.tree.command(name="이용금액")
-async def check_money(interaction: discord.Interaction):
-    uid = str(interaction.user.id)
-    amount = data.get(uid, 0)
-
-    await interaction.response.send_message(
-        f"💰 누적 이용금액: {amount}원",
-        ephemeral=True
-    )
-
-# ==============================
-# 기존 버튼 명령어
-# ==============================
-@bot.command()
-async def 관리자전용피에(ctx):
-    await ctx.send(
-        "📞 담당자 호출 버튼\n\n"
-        "담당자를 호출하려면 버튼을 눌러주세요.\n\n"
-        "약 30초 ~ 5분까지 소요될 수 있으며,\n"
-        "모든 담당자가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
-        view=CallView()
-    )
+        await interaction.response.send_message("📡 호출 완료", ephemeral=True)
 
 # ==============================
 # 봇 준비
 # ==============================
 @bot.event
 async def on_ready():
-    bot.add_view(CallView())  # 버튼 유지
-    await bot.tree.sync()     # 슬래시 명령어 등록
-    print(f"✅ 로그인 완료: {bot.user}")
+    await bot.tree.sync()
+    bot.add_view(CallView())
+    bot.add_view(CloseView())
+    print(f"Logged in as {bot.user}")
+
+# ==============================
+# 호출 메시지
+# ==============================
+@bot.command()
+async def 호출버튼(ctx):
+    await ctx.send("담당자 호출", view=CallView())
 
 # ==============================
 # 실행
