@@ -22,10 +22,13 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==============================
-# 💾 데이터 저장 및 로드 함수
+# 💾 데이터 저장 및 로드 함수 (Railway 볼륨 연동)
 # ==============================
-DATA_FILE = "user_amounts.json"
-LOG_FILE = "amount_log.txt"
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DATA_FILE = os.path.join(DATA_DIR, "user_amounts.json")
+LOG_FILE = os.path.join(DATA_DIR, "amount_log.txt")
 
 def load_amounts():
     if os.path.exists(DATA_FILE):
@@ -37,7 +40,6 @@ def save_amounts(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 로그 함수에 action(추가됨/감소됨) 기능을 확장했습니다.
 def write_log(dealer_name, user_name, amount, total_amount, action="추가됨"):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -190,7 +192,7 @@ class CallView(discord.ui.View):
 
 
 # ==============================
-# 슬래시 명령어 그룹 (이용금액 확장 ⚙️)
+# 슬래시 명령어 그룹 (이용금액)
 # ==============================
 class AmountSystem(app_commands.Group):
     def __init__(self):
@@ -230,10 +232,10 @@ class AmountSystem(app_commands.Group):
         write_log(interaction.user.name, member.name, amount, new_amount, action="추가됨")
 
         await interaction.response.send_message(
-            f"성공적으로 금액을 추가했습니다!\n"
-            f"유저: {member.mention}\n"
-            f"추가 금액: **{amount:,}원**\n"
-            f"총 누적 금액: **{new_amount:,}원**"
+            f"✅ 성공적으로 금액을 추가했습니다!\n"
+            f"👤 유저: {member.mention}\n"
+            f"📈 추가 금액: **{amount:,}원**\n"
+            f"💰 총 누적 금액: **{new_amount:,}원**"
         )
 
     @app_commands.command(name="감소", description="손님의 이용금액을 차감합니다. (담당자 전용)")
@@ -253,7 +255,6 @@ class AmountSystem(app_commands.Group):
         current_amount = amounts.get(user_id_str, 0)
         new_amount = current_amount - amount
         
-        # 금액이 음수(-)가 되지 않도록 안전하게 0원으로 고정 처리
         if new_amount < 0:
             new_amount = 0
 
@@ -263,10 +264,10 @@ class AmountSystem(app_commands.Group):
         write_log(interaction.user.name, member.name, amount, new_amount, action="감소됨")
 
         await interaction.response.send_message(
-            f"성공적으로 금액을 차감했습니다!\n"
-            f"유저: {member.mention}\n"
-            f"차감 금액: **{amount:,}원**\n"
-            f"총 누적 금액: **{new_amount:,}원**"
+            f"📉 성공적으로 금액을 차감했습니다!\n"
+            f"👤 유저: {member.mention}\n"
+            f"📉 차감 금액: **{amount:,}원**\n"
+            f"💰 총 누적 금액: **{new_amount:,}원**"
         )
 
     @app_commands.command(name="관리자조회", description="특정 손님의 이용금액을 조회합니다. (담당자 전용)")
@@ -280,7 +281,6 @@ class AmountSystem(app_commands.Group):
         user_id_str = str(member.id)
         current_amount = amounts.get(user_id_str, 0)
 
-        # 관리자 조회는 채팅창을 도배하지 않도록 비밀 메시지(ephemeral=True)로 출력됩니다.
         await interaction.response.send_message(
             f"🔍 **{member.display_name}** 님의 현재 금액 정산 결과\n"
             f"💰 누적 이용금액: **{current_amount:,}원** 입니다.",
@@ -298,7 +298,6 @@ class AmountSystem(app_commands.Group):
             await interaction.response.send_message("ℹ️ 현재 등록된 이용금액 데이터가 비어있습니다.", ephemeral=True)
             return
 
-        # 금액이 높은 순서대로 보기 좋게 정렬 (내림차순)
         sorted_amounts = sorted(amounts.items(), key=lambda x: x[1], reverse=True)
 
         msg = "📋 **[전체 이용금액 유저 명단 현황]**\n"
@@ -311,7 +310,6 @@ class AmountSystem(app_commands.Group):
             
         msg += "──────────────────"
 
-        # 디스코드 메시지 글자 제한(2000자) 우회 검사 후 안전하게 전송
         if len(msg) > 2000:
             await interaction.response.send_message("⚠️ 등록된 손님이 너무 많아 채팅창에 다 표시할 수 없습니다. `user_amounts.json` 파일을 직접 확인해 주세요.", ephemeral=True)
         else:
@@ -330,10 +328,10 @@ async def on_ready():
     await bot.tree.sync()
     
     print(f"Logged in as {bot.user}")
-    print("✅ 슬래시 명령어 동기화 및 모든 신규 어드민 기능 활성화 완료!")
+    print("✅ 슬래시 명령어 동기화 및 모든 기능 탑재 완료")
 
 # ==============================
-# 명령어
+# 일반 접두사 명령어 (!)
 # ==============================
 @bot.command()
 async def 관리자전용피에(ctx):
@@ -344,6 +342,28 @@ async def 관리자전용피에(ctx):
         "모든 담당자가 부재중일 경우 5분 뒤 자동으로 취소됩니다.",
         view=CallView()
     )
+
+@bot.command(name="DB파일")
+async def download_db_files(ctx):
+    """[신규 ✨] Railway 영구 볼륨안에 은닉된 백업 데이터를 디스코드로 즉시 다운로드합니다."""
+    if ctx.author.id != ADMIN_ID:
+        await ctx.send("❌ 총관리자만 사용할 수 있는 보안 명령어입니다.")
+        return
+
+    json_path = os.path.join(DATA_DIR, "user_amounts.json")
+    log_path = os.path.join(DATA_DIR, "amount_log.txt")
+    
+    files = []
+    
+    if os.path.exists(json_path):
+        files.append(discord.File(json_path))
+    if os.path.exists(log_path):
+        files.append(discord.File(log_path))
+        
+    if files:
+        await ctx.send("📂 **[Railway 영구 볼륨 데이터 백업]**\n현재까지 누적된 유저 금액 데이터와 로그 파일입니다.", files=files)
+    else:
+        await ctx.send("❌ 아직 볼륨 내에 누적된 데이터 파일이 존재하지 않습니다.")
 
 # ==============================
 # 실행
