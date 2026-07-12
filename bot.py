@@ -37,10 +37,11 @@ def save_amounts(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-def write_log(dealer_name, user_name, added_amount, total_amount):
+# 로그 함수에 action(추가됨/감소됨) 기능을 확장했습니다.
+def write_log(dealer_name, user_name, amount, total_amount, action="추가됨"):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"[{now_str}] 담당자: {dealer_name} | 손님: {user_name} | 추가됨: {added_amount:,}원 | 총 누적: {total_amount:,}원\n")
+        f.write(f"[{now_str}] 담당자: {dealer_name} | 손님: {user_name} | {action}: {amount:,}원 | 총 누적: {total_amount:,}원\n")
 
 # ==============================
 # 대화 종료 버튼
@@ -189,7 +190,7 @@ class CallView(discord.ui.View):
 
 
 # ==============================
-# 슬래시 명령어 그룹 (이용금액)
+# 슬래시 명령어 그룹 (이용금액 확장 ⚙️)
 # ==============================
 class AmountSystem(app_commands.Group):
     def __init__(self):
@@ -226,14 +227,95 @@ class AmountSystem(app_commands.Group):
         amounts[user_id_str] = new_amount
         
         save_amounts(amounts)
-        write_log(interaction.user.name, member.name, amount, new_amount)
+        write_log(interaction.user.name, member.name, amount, new_amount, action="추가됨")
 
         await interaction.response.send_message(
-            f"✅ 성공적으로 금액을 추가했습니다!\n"
-            f"👤 유저: {member.mention}\n"
-            f"📈 추가 금액: **{amount:,}원**\n"
-            f"💰 총 누적 금액: **{new_amount:,}원**"
+            f"성공적으로 금액을 추가했습니다!\n"
+            f"유저: {member.mention}\n"
+            f"추가 금액: **{amount:,}원**\n"
+            f"총 누적 금액: **{new_amount:,}원**"
         )
+
+    @app_commands.command(name="감소", description="손님의 이용금액을 차감합니다. (담당자 전용)")
+    @app_commands.describe(member="금액을 차감할 유저", amount="차감할 금액 (숫자만 입력)")
+    async def reduce_amount(self, interaction: discord.Interaction, member: discord.Member, amount: int):
+        if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles] and interaction.user.id != ADMIN_ID:
+            await interaction.response.send_message("❌ 담당자만 사용할 수 있는 명령어입니다.", ephemeral=True)
+            return
+
+        if amount <= 0:
+            await interaction.response.send_message("❌ 금액은 1원 이상 입력해야 합니다.", ephemeral=True)
+            return
+
+        amounts = load_amounts()
+        user_id_str = str(member.id)
+        
+        current_amount = amounts.get(user_id_str, 0)
+        new_amount = current_amount - amount
+        
+        # 금액이 음수(-)가 되지 않도록 안전하게 0원으로 고정 처리
+        if new_amount < 0:
+            new_amount = 0
+
+        amounts[user_id_str] = new_amount
+        
+        save_amounts(amounts)
+        write_log(interaction.user.name, member.name, amount, new_amount, action="감소됨")
+
+        await interaction.response.send_message(
+            f"성공적으로 금액을 차감했습니다!\n"
+            f"유저: {member.mention}\n"
+            f"차감 금액: **{amount:,}원**\n"
+            f"총 누적 금액: **{new_amount:,}원**"
+        )
+
+    @app_commands.command(name="관리자조회", description="특정 손님의 이용금액을 조회합니다. (담당자 전용)")
+    @app_commands.describe(member="조회할 유저")
+    async def admin_check_amount(self, interaction: discord.Interaction, member: discord.Member):
+        if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles] and interaction.user.id != ADMIN_ID:
+            await interaction.response.send_message("❌ 담당자만 사용할 수 있는 명령어입니다.", ephemeral=True)
+            return
+
+        amounts = load_amounts()
+        user_id_str = str(member.id)
+        current_amount = amounts.get(user_id_str, 0)
+
+        # 관리자 조회는 채팅창을 도배하지 않도록 비밀 메시지(ephemeral=True)로 출력됩니다.
+        await interaction.response.send_message(
+            f"🔍 **{member.display_name}** 님의 현재 금액 정산 결과\n"
+            f"💰 누적 이용금액: **{current_amount:,}원** 입니다.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="전체조회", description="금액 데이터가 있는 모든 유저 명단을 확인합니다. (담당자 전용)")
+    async def check_all_amounts(self, interaction: discord.Interaction):
+        if DEALER_ROLE_NAME not in [r.name for r in interaction.user.roles] and interaction.user.id != ADMIN_ID:
+            await interaction.response.send_message("❌ 담당자만 사용할 수 있는 명령어입니다.", ephemeral=True)
+            return
+
+        amounts = load_amounts()
+        if not amounts:
+            await interaction.response.send_message("ℹ️ 현재 등록된 이용금액 데이터가 비어있습니다.", ephemeral=True)
+            return
+
+        # 금액이 높은 순서대로 보기 좋게 정렬 (내림차순)
+        sorted_amounts = sorted(amounts.items(), key=lambda x: x[1], reverse=True)
+
+        msg = "📋 **[전체 이용금액 유저 명단 현황]**\n"
+        msg += "──────────────────\n"
+        
+        for user_id_str, amount in sorted_amounts:
+            member = interaction.guild.get_member(int(user_id_str))
+            user_mention = member.mention if member else f"서버를 나간 유저 ({user_id_str})"
+            msg += f"• {user_mention} 님 ➡️ 💰 **{amount:,}원**\n"
+            
+        msg += "──────────────────"
+
+        # 디스코드 메시지 글자 제한(2000자) 우회 검사 후 안전하게 전송
+        if len(msg) > 2000:
+            await interaction.response.send_message("⚠️ 등록된 손님이 너무 많아 채팅창에 다 표시할 수 없습니다. `user_amounts.json` 파일을 직접 확인해 주세요.", ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
 
 
 # ==============================
@@ -243,13 +325,12 @@ class AmountSystem(app_commands.Group):
 async def on_ready():
     bot.add_view(CallView())
     
-    # 중복 등록 방지를 위해 기존 명령어 초기화 후 새로 추가
     bot.tree.clear_commands(guild=None)
     bot.tree.add_command(AmountSystem())
     await bot.tree.sync()
     
     print(f"Logged in as {bot.user}")
-    print("✅  슬래시 명령어 동기화 성공")
+    print("✅ 슬래시 명령어 동기화 및 모든 신규 어드민 기능 활성화 완료!")
 
 # ==============================
 # 명령어
