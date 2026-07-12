@@ -126,13 +126,12 @@ class AcceptView(discord.ui.View):
         await interaction.response.send_message("✅ 방 생성 완료", ephemeral=True)
 
 # ==============================
-# 담당자 호출 (에러 수정 완료 🛠️)
+# 담당자 호출
 # ==============================
 class CallView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    # 💡 custom_id를 추가하여 봇이 꺼졌다 켜져도 버튼이 작동하도록 수정했습니다.
     @discord.ui.button(label="📞 담당자 호출", style=discord.ButtonStyle.primary, custom_id="call_dealer_btn")
     async def call(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
@@ -238,21 +237,19 @@ class AmountSystem(app_commands.Group):
 
 
 # ==============================
-# 🔥 핵심 (이벤트 등록)
+# 🔥 핵심 (이벤트 등록 및 동기화)
 # ==============================
 @bot.event
 async def on_ready():
     bot.add_view(CallView())
-    bot.tree.add_command(AmountSystem())
     
-    MY_GUILD_ID = 1508867932317552791 
-    guild = discord.Object(id=MY_GUILD_ID)
-    .
-    bot.tree.copy_global_to(guild=guild)
-    await bot.tree.sync(guild=guild)
+    # 중복 등록 방지를 위해 기존 명령어 초기화 후 새로 추가
+    bot.tree.clear_commands(guild=None)
+    bot.tree.add_command(AmountSystem())
+    await bot.tree.sync()
     
     print(f"Logged in as {bot.user}")
-    print("✅ 해당 서버에 슬래시 명령어 즉시 동기화 완료")
+    print("✅  슬래시 명령어 동기화 성공")
 
 # ==============================
 # 명령어
