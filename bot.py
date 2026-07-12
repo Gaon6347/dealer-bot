@@ -6,6 +6,8 @@ import time
 import os
 import json
 import datetime
+import aiohttp
+import base64
 
 TOKEN = os.environ.get("TOKEN")
 DEALER_ROLE_NAME = "담당자"
@@ -44,6 +46,124 @@ def write_log(dealer_name, user_name, amount, total_amount, action="추가됨"):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         f.write(f"[{now_str}] 담당자: {dealer_name} | 손님: {user_name} | {action}: {amount:,}원 | 총 누적: {total_amount:,}원\n")
+
+
+# ==============================
+# 🎮 마인크래프트 API 통신 함수 (신규 ✨)
+# ==============================
+async def fetch_minecraft_profile(username):
+    """Mojang API를 호출하여 유저의 UUID 및 원본 스킨 텍스처 주소를 파싱합니다."""
+    async with aiohttp.ClientSession() as session:
+        # 1. 닉네임으로 UUID 조회
+        async with session.get(f"https://api.mojang.com/users/profiles/minecraft/{username}") as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            uuid = data["id"]
+            real_name = data["name"]
+
+        # 2. UUID로 스킨 텍스처 원본 데이터 세션 조회
+        texture_url = None
+        async with session.get(f"https://sessionserver.mojang.com/session/minecraft/profile/{uuid}") as resp2:
+            if resp2.status == 200:
+                profile_data = await resp2.json()
+                for prop in profile_data.get("properties", []):
+                    if prop.get("name") == "textures":
+                        try:
+                            # Base64 디코딩으로 스킨 원본 주소 추출
+                            decoded = base64.b64decode(prop["value"]).decode("utf-8")
+                            tex_json = json.loads(decoded)
+                            texture_url = tex_json["textures"]["SKIN"]["url"]
+                        except:
+                            pass
+                            
+        return {"name": real_name, "uuid": uuid, "texture_url": texture_url}
+
+
+# ==============================
+# 🎮 마인크래프트 인증 UI 요소들 (신규 ✨)
+# ==============================
+class VerifyConfirmView(discord.ui.View):
+    """본인 계정이 맞는지 최종 확정하는 버튼 컴포넌트"""
+    def __init__(self, mc_name):
+        super().__init__(timeout=60)
+        self.mc_name = mc_name
+
+    @discord.ui.button(label="✔ 내 계정이 맞습니다 (연동 완료)", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # 유저의 디스코드 서버 닉네임을 마인크래프트 실명 닉네임으로 동기화
+            await interaction.user.edit(nick=self.mc_name)
+            await interaction.followup.send(
+                f"✨ **성공적으로 연동되었습니다!**\n디스코드 프로필 닉네임이 `{self.mc_name}`(으)로 변경되었습니다.", 
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            # 최고 관리자(서버 소유자) 또는 권한 계층이 봇보다 높은 경우 예외 처리
+            await interaction.followup.send(
+                f"⚠️ **프로필 검증 성공!**\n다만 권한 계층 문제(예: 서버 소유자 등)로 인해 봇이 닉네임을 직접 수정할 수 없습니다.\n불편하시겠지만 닉네임을 직접 **`{self.mc_name}`** (으)로 수정해 주세요!",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ 닉네임 동기화 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+        self.stop()
+
+
+class MCNameModal(discord.ui.Modal, title="마인크래프트 계정 프로필 조회"):
+    """닉네임을 적을 수 있는 팝업 창 모달"""
+    mc_name_input = discord.ui.TextInput(
+        label="마인크래프트 게임 닉네임",
+        placeholder="대소문자를 정확하게 입력해 주세요.",
+        min_length=3,
+        max_length=16,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        username = self.mc_name_input.value
+        
+        # API 조회 실행
+        profile = await fetch_minecraft_profile(username)
+        if not profile:
+            await interaction.followup.send("❌ 존재하지 않거나 올바르지 않은 마인크래프트 정품 닉네임입니다.", ephemeral=True)
+            return
+
+        uuid = profile["uuid"]
+        real_name = profile["name"]
+        texture = profile["texture_url"]
+
+        # 독창적이고 세련된 다크 테마 임베드 빌딩 (기존 단순 텍스트 복사 탈피)
+        embed = discord.Embed(
+            title="🔒 계정 프로필 본인 검증",
+            description="가져온 마인크래프트 정보가 본인 소유가 맞는지 대조해 보세요.\n정보가 일치한다면 아래 **[연동 완료]** 버튼을 눌러주세요.",
+            color=discord.Color.from_rgb(47, 49, 54) # 고급스러운 딥다크 진회색
+        )
+        embed.add_field(name="👤 마인크래프트 네임", value=f"`{real_name}`", inline=True)
+        embed.add_field(name="🆔 계정 고유 UUID", value=f"`{uuid}`", inline=False)
+        
+        if texture:
+            embed.add_field(name="📂 정품 스킨 원본 리소스", value=f"[텍스처 주소 바로가기]({texture})", inline=False)
+
+        # 고해상도 아바타와 3D 전신 렌더링 배치
+        embed.set_thumbnail(url=f"https://visage.surate.cc/bust/128/{uuid}")
+        embed.set_image(url=f"https://visage.surate.cc/full/256/{uuid}")
+        
+        view = VerifyConfirmView(real_name)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+class VerificationInitialView(discord.ui.View):
+    """처음 채널에 상주하는 인증하기 버튼 클래스"""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🎮 마인크래프트 계정 연동하기", style=discord.ButtonStyle.secondary, custom_id="persistent_mc_verify_btn")
+    async def start_verification(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 버튼 클릭 시 모달창(입력창)을 띄움
+        await interaction.response.send_modal(MCNameModal())
+
 
 # ==============================
 # 대화 종료 버튼
@@ -321,14 +441,17 @@ class AmountSystem(app_commands.Group):
 # ==============================
 @bot.event
 async def on_ready():
+    # 봇 재부팅 시에도 영구 버튼들이 정상 작동하도록 뷰 등록
     bot.add_view(CallView())
+    bot.add_view(VerificationInitialView())
     
     bot.tree.clear_commands(guild=None)
     bot.tree.add_command(AmountSystem())
     await bot.tree.sync()
     
     print(f"Logged in as {bot.user}")
-    print("✅ 슬래시 명령어 동기화 및 모든 기능 탑재 완료")
+    print("✅ 슬래시 명령어 동기화 및 마크 프로필 연동 모듈 활성화 완료")
+
 
 # ==============================
 # 일반 접두사 명령어 (!)
@@ -345,7 +468,6 @@ async def 관리자전용피에(ctx):
 
 @bot.command(name="DB파일")
 async def download_db_files(ctx):
-    """[신규 ✨] Railway 영구 볼륨안에 은닉된 백업 데이터를 디스코드로 즉시 다운로드합니다."""
     if ctx.author.id != ADMIN_ID:
         await ctx.send("❌ 총관리자만 사용할 수 있는 보안 명령어입니다.")
         return
@@ -364,6 +486,27 @@ async def download_db_files(ctx):
         await ctx.send("📂 **[Railway 영구 볼륨 데이터 백업]**\n현재까지 누적된 유저 금액 데이터와 로그 파일입니다.", files=files)
     else:
         await ctx.send("❌ 아직 볼륨 내에 누적된 데이터 파일이 존재하지 않습니다.")
+
+@bot.command(name="인증설정")
+async def setup_verification(ctx):
+    """[신규 ✨] 신규 유저들이 인증 링크를 할 수 있는 고급 안내 패널을 출력합니다."""
+    if ctx.author.id != ADMIN_ID:
+        await ctx.send("❌ 관리자만 사용할 수 있는 명령어입니다.")
+        return
+        
+    embed = discord.Embed(
+        title="🎮 MINECRAFT 계정 동기화 센터",
+        description=(
+            "본 서버는 쾌적하고 투명한 커뮤니티 관리를 위해\n"
+            "마인크래프트 정품 계정 연동 시스템을 제공하고 있습니다.\n\n"
+            "아래 **[마인크래프트 계정 연동하기]** 버튼을 누른 후 본인의 게임 닉네임을\n"
+            "입력해 주시면 확인 후 디스코드 프로필 이름이 자동으로 동기화됩니다."
+        ),
+        color=discord.Color.from_rgb(47, 49, 54)
+    )
+    embed.set_footer(text="정품 마인크래프트 계정만 연동을 지원합니다.")
+    
+    await ctx.send(embed=embed, view=VerificationInitialView())
 
 # ==============================
 # 실행
