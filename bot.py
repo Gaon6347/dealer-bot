@@ -244,9 +244,15 @@ class AmountSystem(app_commands.Group):
 async def on_ready():
     bot.add_view(CallView())
     bot.tree.add_command(AmountSystem())
-    await bot.tree.sync()
+    
+    MY_GUILD_ID = 1508867932317552791 
+    guild = discord.Object(id=MY_GUILD_ID)
+    .
+    bot.tree.copy_global_to(guild=guild)
+    await bot.tree.sync(guild=guild)
+    
     print(f"Logged in as {bot.user}")
-    print("✅ 슬래시 명령어 동기화 및 뷰 등록 완료")
+    print("✅ 해당 서버에 슬래시 명령어 즉시 동기화 완료")
 
 # ==============================
 # 명령어
